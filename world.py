@@ -1,3 +1,4 @@
+# world.py (Updated)
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -51,17 +52,14 @@ class WorldGenerator:
         self.grid[noise > snow_threshold] = 4
 
         # Sand (Beaches)
-        temp_grid = np.copy(self.grid)
-        for i in range(1, self.size - 1):
-            for j in range(1, self.size - 1):
-                if temp_grid[i, j] == 1:  # If it's grass
-                    if (
-                        temp_grid[i - 1, j] == 0
-                        or temp_grid[i + 1, j] == 0
-                        or temp_grid[i, j - 1] == 0
-                        or temp_grid[i, j + 1] == 0
-                    ):
-                        self.grid[i, j] = 5  # Change to sand
+        water_mask = self.grid == 0
+        sand_mask = np.zeros_like(self.grid, dtype=bool)
+        ## Check for water neighbors
+        sand_mask[1:-1, 1:-1] |= water_mask[1:-1, 2:]  # East
+        sand_mask[1:-1, 1:-1] |= water_mask[1:-1, :-2]  # West
+        sand_mask[1:-1, 1:-1] |= water_mask[2:, 1:-1]  # South
+        sand_mask[1:-1, 1:-1] |= water_mask[:-2, 1:-1]  # North
+        self.grid[(self.grid == 1) & sand_mask] = 5
 
         # Trees
         potential = ((noise - water_threshold) / (1 - water_threshold)) ** 4 * 0.7
