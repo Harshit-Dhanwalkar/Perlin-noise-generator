@@ -1,9 +1,12 @@
 from typing import Tuple
 
+import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
 
 from perlin import generate_fractal_noise_2d
+
+# from perlin_numba import generate_fractal_noise_2d
 
 
 class WorldGenerator:
@@ -56,7 +59,6 @@ class WorldGenerator:
         # Sand (Beaches)
         water_mask = self.grid == 0
         sand_mask = np.zeros_like(self.grid, dtype=bool)
-        ## Check for water neighbors
         sand_mask[1:-1, 1:-1] |= water_mask[1:-1, 2:]  # East
         sand_mask[1:-1, 1:-1] |= water_mask[1:-1, :-2]  # West
         sand_mask[1:-1, 1:-1] |= water_mask[2:, 1:-1]  # South
@@ -88,6 +90,17 @@ class WorldGenerator:
         """Plots the generated world grid using matplotlib."""
         image = self.get_image_data()
         plt.imshow(image)
+        plt.title("Procedural World Map")
+        plt.xlabel("X-Coordinate")
+        plt.ylabel("Y-Coordinate")
+
+        handles = [
+            mpatches.Patch(color=self.colors[i] / 255.0, label=f"Terrain Type {i}")
+            for i in range(len(self.colors))
+        ]
+        plt.legend(handles=handles, bbox_to_anchor=(1.05, 1), loc="upper left")
+
+        plt.tight_layout()
         plt.show()
 
 

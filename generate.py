@@ -49,7 +49,7 @@ class WorldApp(QMainWindow):
         # Octaves slider
         self.octaves_slider = QSlider(Qt.Horizontal)
         self.octaves_slider.setMinimum(1)
-        self.octaves_slider.setMaximum(10)
+        self.octaves_slider.setMaximum(8)
         self.octaves_slider.setValue(6)
         self.octaves_label = QLabel(f"Octaves: {self.octaves_slider.value()}")
         self.octaves_slider.valueChanged.connect(self.update_octaves)
@@ -77,11 +77,11 @@ class WorldApp(QMainWindow):
         self.water_slider.valueChanged.connect(self.generate_and_display)
         form_layout.addRow(self.water_label, self.water_slider)
 
-        # Snow Threshold slider (FIXED)
+        # Snow Threshold slider
         self.snow_slider = QSlider(Qt.Horizontal)
         self.snow_slider.setMinimum(0)
         self.snow_slider.setMaximum(100)
-        self.snow_slider.setValue(20)  # Default to a lower value for more snow
+        self.snow_slider.setValue(20)
         self.snow_label = QLabel(f"Snow Amount: {self.snow_slider.value() / 100.0}")
         self.snow_slider.valueChanged.connect(self.generate_and_display)
         form_layout.addRow(self.snow_label, self.snow_slider)
