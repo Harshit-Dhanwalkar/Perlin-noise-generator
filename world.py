@@ -4,31 +4,97 @@ import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
 
-from perlin import generate_fractal_noise_2d
-
-# from perlin_numba import generate_fractal_noise_2d
+# from perlin import generate_fractal_noise_2d
+from perlin_numba import generate_fractal_noise_2d
 
 
 class WorldGenerator:
     """A class to generate and plot a Perlin noise-based world map."""
 
-    def __init__(self, size=64, octaves=6, persistence=0.5):
+    def __init__(self, size=256, octaves=6, persistence=0.5):
         self.size = size
         self.octaves = octaves
         self.persistence = persistence
         self.grid = np.ones((size, size), dtype=np.int32)
         self.colors = np.array(
             [
-                [156, 212, 226],  # Water
-                [138, 181, 73],  # Grass
-                [95, 126, 48],  # Trees
-                [186, 140, 93],  # Dirt
+                [25, 129, 148],  # Deep Water
+                [42, 169, 190],  # Shallow Water
+                [110, 165, 87],  # Grass
+                [85, 140, 65],  # Forest (Trees)
+                [195, 155, 119],  # Dirt
                 [220, 220, 220],  # Snow
                 [245, 222, 179],  # Sand
                 [140, 140, 140],  # Rocks
             ],
             dtype=np.uint8,
         )
+        self.noise = None
+
+    def _generate_noise(self, seed: int):
+        """Generates and normalizes the fractal Perlin noise."""
+        if seed is not None:
+            np.random.seed(seed)
+
+        self.noise = generate_fractal_noise_2d(
+            (self.size, self.size), (1, 1), self.octaves, self.persistence
+        )
+        self.noise = (self.noise - self.noise.min()) / (
+            self.noise.max() - self.noise.min()
+        )
+        self.grid = np.ones((self.size, self.size), dtype=np.int32)
+
+    def _apply_biomes(self, water_threshold: float, snow_threshold: float):
+        """Applies biomes like water, sand, snow, grass, and trees."""
+
+        # Set a base biome for all land areas
+        land_mask = self.noise >= water_threshold
+        self.grid[land_mask] = 2  # Grass
+
+        # Water (lowest elevations)
+        deep_water_threshold = water_threshold * 0.7
+        self.grid[self.noise < deep_water_threshold] = 0  # Deep Water
+        self.grid[
+            (self.noise >= deep_water_threshold) & (self.noise < water_threshold)
+        ] = 1  # Shallow Water
+
+        # Sand (Beaches)
+        sand_mask = np.zeros_like(self.grid, dtype=bool)
+        water_mask = (self.grid == 0) | (self.grid == 1)
+        for i in range(-1, 2):
+            for j in range(-1, 2):
+                if i == 0 and j == 0:
+                    continue
+                shifted_mask = np.roll(water_mask, (i, j), axis=(0, 1))
+                sand_mask |= shifted_mask
+
+        self.grid[(self.grid == 2) & sand_mask] = 6
+
+        # Snow (highest elevations)
+        if snow_threshold > 0:
+            self.grid[self.noise > (1 - snow_threshold)] = 5
+
+        # Trees (Forest)
+        tree_mask = (self.grid == 2) & (self.noise > 0.35) & (self.noise < 0.65)
+        self.grid[tree_mask] = 3
+
+        # Dirt patches (lower grassy areas)
+        dirt_mask = (self.grid == 2) & (self.noise < 0.45)
+        self.grid[dirt_mask] = 4
+
+    def _apply_features(self, rock_probability: float, dirt_probability: float):
+        """Applies small terrain features like rocks and dirt."""
+        # Rocks
+        rock_mask = (self.grid == 2) * (
+            np.random.rand(self.size, self.size) < rock_probability
+        )
+        self.grid[rock_mask] = 7
+
+        # Dirt patches
+        dirt_mask = (self.grid == 2) * (
+            np.random.rand(self.size, self.size) < dirt_probability
+        )
+        self.grid[dirt_mask] = 4
 
     def generate_terrain(
         self,
@@ -39,64 +105,57 @@ class WorldGenerator:
         dirt_probability: float,
     ):
         """Generates the terrain for the world based on Perlin noise."""
-        if seed is not None:
-            np.random.seed(seed)
-
-        # Generate and normalize fractal noise
-        noise = generate_fractal_noise_2d(
-            (self.size, self.size), (1, 1), self.octaves, self.persistence
-        )
-        noise = (noise - noise.min()) / (noise.max() - noise.min())
-
-        self.grid = np.ones((self.size, self.size), dtype=np.int32)
-
-        # Water
-        self.grid[noise < water_threshold] = 0
-
-        # Snow
-        self.grid[noise > snow_threshold] = 4
-
-        # Sand (Beaches)
-        water_mask = self.grid == 0
-        sand_mask = np.zeros_like(self.grid, dtype=bool)
-        sand_mask[1:-1, 1:-1] |= water_mask[1:-1, 2:]  # East
-        sand_mask[1:-1, 1:-1] |= water_mask[1:-1, :-2]  # West
-        sand_mask[1:-1, 1:-1] |= water_mask[2:, 1:-1]  # South
-        sand_mask[1:-1, 1:-1] |= water_mask[:-2, 1:-1]  # North
-        self.grid[(self.grid == 1) & sand_mask] = 5
-
-        # Trees
-        potential = ((noise - water_threshold) / (1 - water_threshold)) ** 4 * 0.7
-        mask = (self.grid == 1) * (np.random.rand(self.size, self.size) < potential)
-        self.grid[mask] = 2
-
-        # Rocks
-        rock_mask = (self.grid == 1) * (
-            np.random.rand(self.size, self.size) < rock_probability
-        )
-        self.grid[rock_mask] = 6
-
-        # Dirt
-        dirt_mask = (self.grid == 1) * (
-            np.random.rand(self.size, self.size) < dirt_probability
-        )
-        self.grid[dirt_mask] = 3
+        self._generate_noise(seed)
+        self._apply_biomes(water_threshold, snow_threshold)
+        self._apply_features(rock_probability, dirt_probability)
 
     def get_image_data(self):
-        """Returns the world grid as a colored image array."""
-        return self.colors[self.grid.reshape(-1)].reshape(self.grid.shape + (3,))
+        """Returns the world grid as a colored image array with elevation-based coloring."""
+        if self.noise is None:
+            raise ValueError("Noise data not generated. Call generate_terrain() first.")
+
+        image_data = np.zeros(self.grid.shape + (3,), dtype=np.uint8)
+
+        for i in range(self.size):
+            for j in range(self.size):
+                terrain_type = self.grid[i, j]
+                noise_val = self.noise[i, j]
+
+                if terrain_type == 0:  # Deep Water
+                    image_data[i, j] = self.colors[0]
+                elif terrain_type == 1:  # Shallow Water
+                    image_data[i, j] = self.colors[1]
+                elif terrain_type == 2:  # Grass
+                    image_data[i, j] = self.colors[2]
+                elif terrain_type == 3:  # Forest
+                    image_data[i, j] = self.colors[3]
+                elif terrain_type == 4:  # Dirt
+                    image_data[i, j] = self.colors[4]
+                elif terrain_type == 5:  # Snow
+                    image_data[i, j] = self.colors[5]
+                elif terrain_type == 6:  # Sand
+                    image_data[i, j] = self.colors[6]
+                elif terrain_type == 7:  # Rocks
+                    image_data[i, j] = self.colors[7]
+        return image_data
 
     def plot(self):
         """Plots the generated world grid using matplotlib."""
         image = self.get_image_data()
-        plt.imshow(image)
+        plt.imshow(image, interpolation="nearest")
         plt.title("Procedural World Map")
         plt.xlabel("X-Coordinate")
         plt.ylabel("Y-Coordinate")
 
         handles = [
-            mpatches.Patch(color=self.colors[i] / 255.0, label=f"Terrain Type {i}")
-            for i in range(len(self.colors))
+            mpatches.Patch(color=self.colors[0] / 255.0, label="Deep Water"),
+            mpatches.Patch(color=self.colors[1] / 255.0, label="Shallow Water"),
+            mpatches.Patch(color=self.colors[2] / 255.0, label="Grass"),
+            mpatches.Patch(color=self.colors[3] / 255.0, label="Forest"),
+            mpatches.Patch(color=self.colors[4] / 255.0, label="Dirt"),
+            mpatches.Patch(color=self.colors[5] / 255.0, label="Snow"),
+            mpatches.Patch(color=self.colors[6] / 255.0, label="Sand"),
+            mpatches.Patch(color=self.colors[7] / 255.0, label="Rocks"),
         ]
         plt.legend(handles=handles, bbox_to_anchor=(1.05, 1), loc="upper left")
 
@@ -107,10 +166,10 @@ class WorldGenerator:
 if __name__ == "__main__":
     world = WorldGenerator(size=256)
     world.generate_terrain(
-        seed=0,
+        seed=42,
         water_threshold=0.3,
-        snow_threshold=0.8,
-        rock_probability=0.02,
+        snow_threshold=0.2,
+        rock_probability=0.06,
         dirt_probability=0.05,
     )
     world.plot()

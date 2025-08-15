@@ -147,8 +147,7 @@ class WorldApp(QMainWindow):
         persistence = self.world_generator.persistence
         water_threshold = self.water_slider.value() / 100.0
 
-        snow_threshold_slider_val = self.snow_slider.value() / 100.0
-        snow_threshold = 1.0 - snow_threshold_slider_val
+        snow_threshold = self.snow_slider.value() / 100.0
 
         rock_probability = self.rock_slider.value() / 100.0
         dirt_probability = self.dirt_slider.value() / 100.0
@@ -157,7 +156,7 @@ class WorldApp(QMainWindow):
         seed = int(seed_text) if seed_text.isdigit() else np.random.randint(0, 10000)
 
         self.water_label.setText(f"Water Threshold: {water_threshold}")
-        self.snow_label.setText(f"Snow Amount: {snow_threshold_slider_val}")
+        self.snow_label.setText(f"Snow Amount: {snow_threshold}")
         self.rock_label.setText(f"Rock Probability: {rock_probability}")
         self.dirt_label.setText(f"Dirt Probability: {dirt_probability}")
 
@@ -172,7 +171,9 @@ class WorldApp(QMainWindow):
         )
         pixmap = QPixmap.fromImage(q_image)
         self.image_label.setPixmap(
-            pixmap.scaled(self.image_label.size(), Qt.KeepAspectRatio)
+            pixmap.scaled(
+                self.image_label.size(), Qt.KeepAspectRatio, Qt.FastTransformation
+            )
         )
 
     def save_image(self):
