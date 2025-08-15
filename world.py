@@ -1,4 +1,5 @@
-# world.py (Updated)
+from typing import Tuple
+
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -26,7 +27,14 @@ class WorldGenerator:
             dtype=np.uint8,
         )
 
-    def generate_terrain(self, seed=None):
+    def generate_terrain(
+        self,
+        seed: int,
+        water_threshold: float,
+        snow_threshold: float,
+        rock_probability: float,
+        dirt_probability: float,
+    ):
         """Generates the terrain for the world based on Perlin noise."""
         if seed is not None:
             np.random.seed(seed)
@@ -38,12 +46,6 @@ class WorldGenerator:
         noise = (noise - noise.min()) / (noise.max() - noise.min())
 
         self.grid = np.ones((self.size, self.size), dtype=np.int32)
-
-        # thresholds for terrain types
-        water_threshold = 0.3
-        snow_threshold = 0.8
-        rock_probability = 0.02
-        dirt_probability = 0.05
 
         # Water
         self.grid[noise < water_threshold] = 0
@@ -91,5 +93,11 @@ class WorldGenerator:
 
 if __name__ == "__main__":
     world = WorldGenerator(size=256)
-    world.generate_terrain(seed=0)
+    world.generate_terrain(
+        seed=0,
+        water_threshold=0.3,
+        snow_threshold=0.8,
+        rock_probability=0.02,
+        dirt_probability=0.05,
+    )
     world.plot()

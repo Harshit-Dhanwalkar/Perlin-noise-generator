@@ -14,9 +14,6 @@ def generate_perlin_noise_2d(shape: Tuple[int, int], res: Tuple[int, int]):
     Returns:
         A 2D NumPy array of Perlin noise.
     """
-    if not (shape[0] % res[0] == 0 and shape[1] % res[1] == 0):
-        raise ValueError("Shape must be divisible by resolution.")
-
     # Create a grid of random gradient vectors
     angles = 2 * np.pi * np.random.rand(res[0] + 1, res[1] + 1)
     gradients = np.dstack((np.cos(angles), np.sin(angles)))
