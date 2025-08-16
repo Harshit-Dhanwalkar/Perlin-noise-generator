@@ -45,7 +45,7 @@ terrain = Entity(
     # double_sided=True,
     shader=lit_with_shadows_shader,
 )
-test_cube = Entity(model="cube", color=color.red, position=(0, -100, 0), scale=5)
+# test_cube = Entity(model="cube", color=color.red, position=(0, -100, 0), scale=5)
 
 
 # --- PLAYER SETUP ---

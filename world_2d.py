@@ -30,6 +30,8 @@ class WorldGenerator:
             dtype=np.uint8,
         )
         self.noise = None
+        self.snow_threshold = 0.2
+        self.water_threshold = 0.35
 
     def _generate_noise(self, seed: int):
         """Generates and normalizes the fractal Perlin noise."""
@@ -105,10 +107,9 @@ class WorldGenerator:
         dirt_probability=0.05,
     ):
         """Generates the terrain for the world based on Perlin noise."""
+        self.water_threshold = water_threshold
+        self.snow_threshold = snow_threshold
         self._generate_noise(seed)
-        # self._apply_biomes(water_threshold, snow_threshold)
-        # self._apply_features(rock_probability, dirt_probability)
-
         for y in range(self.size):
             for x in range(self.size):
                 noise_val = self.noise[y, x]
@@ -174,10 +175,10 @@ class WorldGenerator:
         height_scale = 10
         size = self.size
         vertices_np = np.zeros((size * size, 3), dtype=np.float32)
-        colors_np = np.zeros((size * size, 4), dtype=np.float32)  # RGBA format
+        normals = np.zeros_like(vertices_np)
         uvs_np = np.zeros((size * size, 2), dtype=np.float32)
+        colors_np = np.zeros((size * size, 4), dtype=np.float32)
 
-        # Generate vertices and colors
         for y in range(size):
             for x in range(size):
                 idx = y * size + x
@@ -185,14 +186,8 @@ class WorldGenerator:
                 height = noise_val * height_scale
                 vertices_np[idx] = [x, height, y]
                 rgb_color = self.colors[self.grid[y, x]] / 255.0
-                colors_np[idx] = [
-                    rgb_color[0],
-                    rgb_color[1],
-                    rgb_color[2],
-                    1.0,
-                ]
+                colors_np[idx] = [rgb_color[0], rgb_color[1], rgb_color[2], 1.0]
 
-        # Create triangles
         triangles_np = []
         for y in range(size - 1):
             for x in range(size - 1):
@@ -200,14 +195,10 @@ class WorldGenerator:
                 v2 = y * size + x + 1
                 v3 = (y + 1) * size + x
                 v4 = (y + 1) * size + x + 1
-                # First triangle
                 triangles_np.extend([v1, v3, v2])
-                # Second triangle
                 triangles_np.extend([v2, v3, v4])
         triangles_np = np.array(triangles_np, dtype=np.uint32)
 
-        # Compute normals from vertices and triangles
-        normals = np.zeros_like(vertices_np)
         for i in range(0, len(triangles_np), 3):
             v_a = vertices_np[triangles_np[i]]
             v_b = vertices_np[triangles_np[i + 1]]
@@ -228,14 +219,30 @@ class WorldGenerator:
         )
         normals[normals_norm != 0] /= normals_norm[normals_norm != 0].reshape(-1, 1)
 
-        # Compute UVs
-        uvs = np.zeros((size * size, 2), dtype=np.float32)
+        uv_grass = [0.0, 0.5, 0.5, 1.0]
+        uv_rock = [0.5, 0.5, 1.0, 1.0]
+        uv_snow = [0.0, 0.0, 0.5, 0.5]
+
         for y in range(size):
             for x in range(size):
                 idx = y * size + x
-                uvs[idx] = [x / size, y / size]
+                noise_val = self.noise[y, x]
+                normal = normals[idx]
 
-        return vertices_np, triangles_np, colors_np, normals, uvs
+                if noise_val >= 1 - self.snow_threshold:
+                    tx_coords = uv_snow
+                elif normal[1] < 0.7:
+                    tx_coords = uv_rock
+                else:
+                    tx_coords = uv_grass
+
+                u_scale = tx_coords[2] - tx_coords[0]
+                v_scale = tx_coords[3] - tx_coords[1]
+                u = (x / self.size) * u_scale + tx_coords[0]
+                v = (y / self.size) * v_scale + tx_coords[1]
+                uvs_np[idx] = [u, v]
+
+        return vertices_np, triangles_np, colors_np, normals, uvs_np
 
 
 if __name__ == "__main__":
