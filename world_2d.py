@@ -1,3 +1,4 @@
+# world_2d.py
 from typing import Tuple
 
 import matplotlib.patches as mpatches
@@ -98,24 +99,46 @@ class WorldGenerator:
     def generate_terrain(
         self,
         seed: int,
-        water_threshold: float,
-        snow_threshold: float,
-        rock_probability: float,
-        dirt_probability: float,
+        water_threshold=0.35,
+        snow_threshold=0.2,
+        rock_probability=0.06,
+        dirt_probability=0.05,
     ):
         """Generates the terrain for the world based on Perlin noise."""
         self._generate_noise(seed)
-        self._apply_biomes(water_threshold, snow_threshold)
-        self._apply_features(rock_probability, dirt_probability)
+        # self._apply_biomes(water_threshold, snow_threshold)
+        # self._apply_features(rock_probability, dirt_probability)
+
+        for y in range(self.size):
+            for x in range(self.size):
+                noise_val = self.noise[y, x]
+                # Water
+                if noise_val <= water_threshold:
+                    self.grid[y, x] = 0  # Deep Water
+                    if (
+                        noise_val > water_threshold - 0.05
+                    ):  # Creates a shallow water band
+                        self.grid[y, x] = 1  # Shallow Water
+                # Land
+                else:
+                    self.grid[y, x] = 2  # Grass
+                    # Add variation with probabilities
+                    if np.random.rand() < rock_probability:
+                        self.grid[y, x] = 7  # Rocks
+                    elif np.random.rand() < dirt_probability:
+                        self.grid[y, x] = 4  # Dirt
+                    # Snow on high ground
+                    if noise_val >= 1 - snow_threshold:
+                        self.grid[y, x] = 5  # Snow
 
     def get_image_data(self):
         """
-        Returns the world grid as a colored image array using a vectorized approach.
+        Returns the world map as a color image.
         """
-        if self.noise is None:
-            raise ValueError("Noise data not generated. Call generate_terrain() first.")
-
-        image_data = self.colors[self.grid]
+        height, width = self.grid.shape
+        image_data = np.zeros((height, width, 3), dtype=np.uint8)
+        for i in range(len(self.colors)):
+            image_data[self.grid == i] = self.colors[i]
         return image_data
 
     def plot(self):
@@ -154,14 +177,22 @@ class WorldGenerator:
         colors_np = np.zeros((size * size, 4), dtype=np.float32)  # RGBA format
         uvs_np = np.zeros((size * size, 2), dtype=np.float32)
 
+        # Generate vertices and colors
         for y in range(size):
             for x in range(size):
                 idx = y * size + x
-                vertices_np[idx] = [x, self.noise[y, x] * height_scale, y]
-                colors_np[idx] = np.append(self.colors[self.grid[y, x]] / 255.0, 1.0)
-                uvs_np[idx] = [x / (size - 1), y / (size - 1)]
+                noise_val = self.noise[y, x]
+                height = noise_val * height_scale
+                vertices_np[idx] = [x, height, y]
+                rgb_color = self.colors[self.grid[y, x]] / 255.0
+                colors_np[idx] = [
+                    rgb_color[0],
+                    rgb_color[1],
+                    rgb_color[2],
+                    1.0,
+                ]
 
-        # Create triangles (two per quad)
+        # Create triangles
         triangles_np = []
         for y in range(size - 1):
             for x in range(size - 1):
@@ -192,10 +223,19 @@ class WorldGenerator:
             normals[triangles_np[i + 1]] += normal
             normals[triangles_np[i + 2]] += normal
 
-        normals_norm = np.linalg.norm(normals, axis=1, keepdims=True)
-        normals[normals_norm.flatten() != 0] /= normals_norm[normals_norm.flatten() != 0]
+        normals_norm = np.sqrt(
+            normals[:, 0] ** 2 + normals[:, 1] ** 2 + normals[:, 2] ** 2
+        )
+        normals[normals_norm != 0] /= normals_norm[normals_norm != 0].reshape(-1, 1)
 
-        return vertices_np, triangles_np, colors_np, normals, uvs_np
+        # Compute UVs
+        uvs = np.zeros((size * size, 2), dtype=np.float32)
+        for y in range(size):
+            for x in range(size):
+                idx = y * size + x
+                uvs[idx] = [x / size, y / size]
+
+        return vertices_np, triangles_np, colors_np, normals, uvs
 
 
 if __name__ == "__main__":
