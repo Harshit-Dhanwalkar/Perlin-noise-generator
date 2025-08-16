@@ -17,7 +17,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from world import WorldGenerator
+from world_2d import WorldGenerator
 
 
 class WorldApp(QMainWindow):

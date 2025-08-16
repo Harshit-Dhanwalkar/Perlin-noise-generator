@@ -1,81 +1,82 @@
+# perlin_numba.py
 from typing import Tuple
 
 import numpy as np
 from numba import njit
 
 
-@njit
-def interpolant(t: np.ndarray):
-    """
-    Returns a smoother interpolation value.
-    """
-    return t * t * t * (t * (t * 6 - 15) + 10)
-
-
-@njit
+@njit(fastmath=True)
 def generate_perlin_noise_2d(
     shape: Tuple[int, int],
     res: Tuple[int, int],
     tileable: Tuple[bool, bool] = (False, False),
-    interpolant=interpolant,
 ):
     """
-    Generate a 2D numpy array of Perlin noise.
+    Generate a 2D numpy array of Perlin noise with Numba.
     """
-    if not (shape[0] % res[0] == 0 and shape[1] % res[1] == 0):
-        raise ValueError("Shape must be a multiple of res.")
 
-    delta = (res[0] / shape[0], res[1] / shape[1])
-    d = (shape[0] // res[0], shape[1] // res[1])
-    xvals = np.arange(0, res[0], delta[0])
-    yvals = np.arange(0, res[1], delta[1])
-    grid = np.empty((2, len(xvals), len(yvals)))
-    for j, y in enumerate(yvals):
-        for i, x in enumerate(xvals):
-            grid[0][i, j] = x
-    yy = np.empty((len(xvals), len(yvals)))
-    for i, x in enumerate(xvals):
-        grid[1][i, :] = yvals
-    grid = grid.transpose(1, 2, 0) % 1
+    def interpolant(t):
+        return t * t * t * (t * (t * 6 - 15) + 10)
 
     # Gradients
-    angles = 2 * np.pi * np.random.rand(res[0] + 1, res[1] + 1)
-    gradients = np.dstack((np.cos(angles), np.sin(angles)))
+    gradients = np.random.rand(res[0] + 1, res[1] + 1, 2) * 2 - 1
+    norm = np.sqrt(gradients[..., 0] ** 2 + gradients[..., 1] ** 2)
+    gradients[..., 0] /= norm
+    gradients[..., 1] /= norm
+
     if tileable[0]:
         gradients[-1, :] = gradients[0, :]
     if tileable[1]:
         gradients[:, -1] = gradients[:, 0]
-    grad_matrix = np.empty((d[0] * gradients.shape[0], d[1] * gradients.shape[1], 2))
-    for i in range(gradients.shape[0]):
-        for j in range(gradients.shape[1]):
-            grad_matrix[i * d[0] : (i + 1) * d[0], j * d[1] : (j + 1) * d[1]] = (
-                gradients[i, j]
+
+    # Coordinate grid
+    x_coords = np.arange(0, res[0], res[0] / shape[0])
+    y_coords = np.arange(0, res[1], res[1] / shape[1])
+    coords = np.zeros((shape[0], shape[1], 2))
+    for i in range(shape[0]):
+        for j in range(shape[1]):
+            coords[i, j, 0] = y_coords[j]  # x coordinate
+            coords[i, j, 1] = x_coords[i]  # y coordinate
+
+    coords_int = coords.astype(np.int32)
+    coords_frac = coords - coords_int
+
+    # Calculate dot products
+    n00 = np.zeros(shape)
+    n10 = np.zeros(shape)
+    n01 = np.zeros(shape)
+    n11 = np.zeros(shape)
+
+    for i in range(shape[0]):
+        for j in range(shape[1]):
+            x_idx = coords_int[i, j, 0]
+            y_idx = coords_int[i, j, 1]
+
+            n00[i, j] = (
+                gradients[x_idx, y_idx, 0] * coords_frac[i, j, 0]
+                + gradients[x_idx, y_idx, 1] * coords_frac[i, j, 1]
             )
-    gradients = grad_matrix
+            n10[i, j] = (
+                gradients[x_idx + 1, y_idx, 0] * (coords_frac[i, j, 0] - 1)
+                + gradients[x_idx + 1, y_idx, 1] * coords_frac[i, j, 1]
+            )
+            n01[i, j] = gradients[x_idx, y_idx + 1, 0] * coords_frac[
+                i, j, 0
+            ] + gradients[x_idx, y_idx + 1, 1] * (coords_frac[i, j, 1] - 1)
+            n11[i, j] = gradients[x_idx + 1, y_idx + 1, 0] * (
+                coords_frac[i, j, 0] - 1
+            ) + gradients[x_idx + 1, y_idx + 1, 1] * (coords_frac[i, j, 1] - 1)
 
-    g00 = gradients[: -d[0], : -d[1]]
-    g10 = gradients[d[0] :, : -d[1]]
-    g01 = gradients[: -d[0], d[1] :]
-    g11 = gradients[d[0] :, d[1] :]
+    t_x = interpolant(coords_frac[..., 0])
+    t_y = interpolant(coords_frac[..., 1])
 
-    # Ramps
-    n00 = np.sum(np.dstack((grid[:, :, 0], grid[:, :, 1])) * g00, 2)
-    n10 = np.sum(np.dstack((grid[:, :, 0] - 1, grid[:, :, 1])) * g10, 2)
-    n01 = np.sum(np.dstack((grid[:, :, 0], grid[:, :, 1] - 1)) * g01, 2)
-    n11 = np.sum(np.dstack((grid[:, :, 0] - 1, grid[:, :, 1] - 1)) * g11, 2)
+    ix0 = n00 * (1 - t_x) + n10 * t_x
+    ix1 = n01 * (1 - t_x) + n11 * t_x
 
-    # Interpolation
-    t = interpolant(grid)
-    n0 = n00 * (1 - t[:, :, 0]) + t[:, :, 0] * n10
-    n1 = n01 * (1 - t[:, :, 0]) + t[:, :, 0] * n11
-    t1 = (1 - t[:, :, 1]) * n0
-    t2 = t[:, :, 1] * n1
-    sum_t = t1 + t2
-    mult_s2 = np.sqrt(2) * sum_t
-    return mult_s2
+    return np.sqrt(2) * (ix0 * (1 - t_y) + ix1 * t_y)
 
 
-@njit
+@njit(fastmath=True)
 def generate_fractal_noise_2d(
     shape: Tuple[int, int],
     res: Tuple[int, int],
@@ -83,17 +84,16 @@ def generate_fractal_noise_2d(
     persistence: float = 0.5,
     lacunarity: int = 2,
     tileable: Tuple[bool, bool] = (False, False),
-    interpolant=interpolant,
 ):
     """
     Generate a 2D numpy array of fractal noise.
     """
     noise = np.zeros(shape)
-    frequency = 1
-    amplitude = 1
+    frequency = 1.0
+    amplitude = 1.0
     for _ in range(octaves):
         noise += amplitude * generate_perlin_noise_2d(
-            shape, (frequency * res[0], frequency * res[1]), tileable, interpolant
+            shape, (int(frequency * res[0]), int(frequency * res[1])), tileable
         )
         frequency *= lacunarity
         amplitude *= persistence

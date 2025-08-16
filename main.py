@@ -1,3 +1,4 @@
+import numpy as np
 from ursina import *
 from ursina.prefabs.first_person_controller import FirstPersonController
 from ursina.shaders import lit_with_shadows_shader
@@ -41,39 +42,46 @@ terrain = Entity(
     collider="mesh",
     # texture=None,
     # double_sided=True,
+    shader=lit_with_shadows_shader,
 )
-# test_cube = Entity(model="cube", color=color.red, position=(0, -100, 0), scale=5)
+test_cube = Entity(model="cube", color=color.red, position=(0, -100, 0), scale=5)
+
 
 # --- PLAYER SETUP ---
-start_x, start_z = world_size // 2, world_size // 2
-# start_height = world_generator.noise[start_x, start_z] * 20 + 2
-# start_x = 50
-# start_z = 50
-# start_z = world_generator.noise[start_x, start_z] * 10
-start_height = 170
+def find_safe_spawn_point():
+    """Finds a safe spawn point for the player on land."""
+    mid_x, mid_z = world_size // 2, world_size // 2
+    height_scale = 10
 
-# player = FirstPersonController(
-#     position=(start_x - world_size / 2, start_height, start_z - world_size / 2),
-#     # position=(start_x, start_z, start_height),
-#     # speed=10,
-#     # gravity=0.5,
-#     mouse_sensitivity=Vec2(40, 40),
-#     origin_y=-0.5,
-# )
+    for offset in range(1, world_size // 4):
+        x = mid_x + np.random.randint(
+            max(-offset, -mid_x), min(offset, world_size - mid_x - 1)
+        )
+        z = mid_z + np.random.randint(
+            max(-offset, -mid_z), min(offset, world_size - mid_z - 1)
+        )
+
+        if world_generator.grid[x, z] not in [0, 1]:  # Check if it's not water
+            height = world_generator.noise[x, z] * height_scale * terrain.scale.y
+            return (
+                x * terrain.scale.x + terrain.x,
+                height + 1.5,
+                z * terrain.scale.z + terrain.z,
+            )
+    return (0, 150, 0)
+
+
+start_position = find_safe_spawn_point()
 player = FirstPersonController(
-    position=(
-        start_x * terrain.scale.x + terrain.x,
-        start_height,
-        start_z * terrain.scale.z + terrain.z,
-    ),
+    position=start_position,
+    mouse_sensitivity=Vec2(40, 40),
+    origin_y=-0.5,
 )
-player.camera_pivot.y = start_height
 
 # --- LIGHTING & SKY ---
-# DirectionalLight(parent=scene, y=100, z=100, shadows=True)
-# Sky()
-sun = DirectionalLight(y=2, rotation=(45, 120, 0))
+sun = DirectionalLight(y=20, rotation=(45, 120, 0), shadows=True)
 sun.look_at(Vec3(0, -1, 0))
+AmbientLight(color=color.rgba(50, 50, 50, 255))
 Sky(texture="sky_default")
 
 app.run()
