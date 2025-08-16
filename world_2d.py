@@ -141,36 +141,28 @@ class WorldGenerator:
         plt.tight_layout()
         plt.show()
 
-    def create_3d_mesh(
-        self,
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """Creates the data for a 3D mesh from the Perlin noise heightmap with normals and UVs."""
+    def create_3d_mesh(self):
+        """
+        Generates vertices, triangles, colors, normals, and UVs for a 3D mesh.
+        """
         if self.noise is None:
             raise ValueError("Noise data not generated. Call generate_terrain() first.")
 
         height_scale = 10
         size = self.size
-        vertices = np.zeros((size * size, 3), dtype=np.float32)
-        colors = np.zeros((size * size, 4), dtype=np.float32)  # RGBA format
-        uvs = np.zeros((size * size, 2), dtype=np.float32)
+        vertices_np = np.zeros((size * size, 3), dtype=np.float32)
+        colors_np = np.zeros((size * size, 4), dtype=np.float32)  # RGBA format
+        uvs_np = np.zeros((size * size, 2), dtype=np.float32)
 
-        # Calculate vertices, colors, and UVs in a vectorized way
-        y_coords, x_coords = np.indices((size, size))
-        vertices[:, 0] = x_coords.flatten()
-        vertices[:, 2] = y_coords.flatten()
-        vertices[:, 1] = self.noise.flatten() * height_scale
-
-        # Vectorized color assignment
-        flat_grid = self.grid.flatten()
-        colors[:, :3] = self.colors[flat_grid] / 255.0
-        colors[:, 3] = 1.0  # Alpha
-
-        # Vectorized UV assignment
-        uvs[:, 0] = x_coords.flatten() / size
-        uvs[:, 1] = y_coords.flatten() / size
+        for y in range(size):
+            for x in range(size):
+                idx = y * size + x
+                vertices_np[idx] = [x, self.noise[y, x] * height_scale, y]
+                colors_np[idx] = np.append(self.colors[self.grid[y, x]] / 255.0, 1.0)
+                uvs_np[idx] = [x / (size - 1), y / (size - 1)]
 
         # Create triangles (two per quad)
-        triangles = []
+        triangles_np = []
         for y in range(size - 1):
             for x in range(size - 1):
                 v1 = y * size + x
@@ -178,30 +170,32 @@ class WorldGenerator:
                 v3 = (y + 1) * size + x
                 v4 = (y + 1) * size + x + 1
                 # First triangle
-                triangles.extend([v1, v3, v2])
+                triangles_np.extend([v1, v3, v2])
                 # Second triangle
-                triangles.extend([v2, v3, v4])
-        triangles = np.array(triangles, dtype=np.uint32)
+                triangles_np.extend([v2, v3, v4])
+        triangles_np = np.array(triangles_np, dtype=np.uint32)
 
         # Compute normals from vertices and triangles
-        normals = np.zeros_like(vertices)
-        for i in range(0, len(triangles), 3):
-            v_a = vertices[triangles[i]]
-            v_b = vertices[triangles[i + 1]]
-            v_c = vertices[triangles[i + 2]]
+        normals = np.zeros_like(vertices_np)
+        for i in range(0, len(triangles_np), 3):
+            v_a = vertices_np[triangles_np[i]]
+            v_b = vertices_np[triangles_np[i + 1]]
+            v_c = vertices_np[triangles_np[i + 2]]
 
-            # Calculate the normal vector for the triangle
             edge1 = v_b - v_a
             edge2 = v_c - v_a
             normal = np.cross(edge1, edge2)
-            normal /= np.linalg.norm(normal)
-            normals[triangles[i]] += normal
-            normals[triangles[i + 1]] += normal
-            normals[triangles[i + 2]] += normal
+            norm_val = np.linalg.norm(normal)
+            if norm_val > 0:
+                normal /= norm_val
+            normals[triangles_np[i]] += normal
+            normals[triangles_np[i + 1]] += normal
+            normals[triangles_np[i + 2]] += normal
 
-        normals /= np.linalg.norm(normals, axis=1, keepdims=True)
+        normals_norm = np.linalg.norm(normals, axis=1, keepdims=True)
+        normals[normals_norm.flatten() != 0] /= normals_norm[normals_norm.flatten() != 0]
 
-        return vertices, triangles, colors, normals, uvs
+        return vertices_np, triangles_np, colors_np, normals, uvs_np
 
 
 if __name__ == "__main__":
