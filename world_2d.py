@@ -4,7 +4,6 @@ import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import numpy as np
 
-# from perlin import generate_fractal_noise_2d
 from perlin_numba import generate_fractal_noise_2d
 
 
@@ -110,33 +109,13 @@ class WorldGenerator:
         self._apply_features(rock_probability, dirt_probability)
 
     def get_image_data(self):
-        """Returns the world grid as a colored image array with elevation-based coloring."""
+        """
+        Returns the world grid as a colored image array using a vectorized approach.
+        """
         if self.noise is None:
             raise ValueError("Noise data not generated. Call generate_terrain() first.")
 
-        image_data = np.zeros(self.grid.shape + (3,), dtype=np.uint8)
-
-        for i in range(self.size):
-            for j in range(self.size):
-                terrain_type = self.grid[i, j]
-                noise_val = self.noise[i, j]
-
-                if terrain_type == 0:  # Deep Water
-                    image_data[i, j] = self.colors[0]
-                elif terrain_type == 1:  # Shallow Water
-                    image_data[i, j] = self.colors[1]
-                elif terrain_type == 2:  # Grass
-                    image_data[i, j] = self.colors[2]
-                elif terrain_type == 3:  # Forest
-                    image_data[i, j] = self.colors[3]
-                elif terrain_type == 4:  # Dirt
-                    image_data[i, j] = self.colors[4]
-                elif terrain_type == 5:  # Snow
-                    image_data[i, j] = self.colors[5]
-                elif terrain_type == 6:  # Sand
-                    image_data[i, j] = self.colors[6]
-                elif terrain_type == 7:  # Rocks
-                    image_data[i, j] = self.colors[7]
+        image_data = self.colors[self.grid]
         return image_data
 
     def plot(self):
@@ -161,6 +140,68 @@ class WorldGenerator:
 
         plt.tight_layout()
         plt.show()
+
+    def create_3d_mesh(
+        self,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Creates the data for a 3D mesh from the Perlin noise heightmap with normals and UVs."""
+        if self.noise is None:
+            raise ValueError("Noise data not generated. Call generate_terrain() first.")
+
+        height_scale = 10
+        size = self.size
+        vertices = np.zeros((size * size, 3), dtype=np.float32)
+        colors = np.zeros((size * size, 4), dtype=np.float32)  # RGBA format
+        uvs = np.zeros((size * size, 2), dtype=np.float32)
+
+        # Calculate vertices, colors, and UVs in a vectorized way
+        y_coords, x_coords = np.indices((size, size))
+        vertices[:, 0] = x_coords.flatten()
+        vertices[:, 2] = y_coords.flatten()
+        vertices[:, 1] = self.noise.flatten() * height_scale
+
+        # Vectorized color assignment
+        flat_grid = self.grid.flatten()
+        colors[:, :3] = self.colors[flat_grid] / 255.0
+        colors[:, 3] = 1.0  # Alpha
+
+        # Vectorized UV assignment
+        uvs[:, 0] = x_coords.flatten() / size
+        uvs[:, 1] = y_coords.flatten() / size
+
+        # Create triangles (two per quad)
+        triangles = []
+        for y in range(size - 1):
+            for x in range(size - 1):
+                v1 = y * size + x
+                v2 = y * size + x + 1
+                v3 = (y + 1) * size + x
+                v4 = (y + 1) * size + x + 1
+                # First triangle
+                triangles.extend([v1, v3, v2])
+                # Second triangle
+                triangles.extend([v2, v3, v4])
+        triangles = np.array(triangles, dtype=np.uint32)
+
+        # Compute normals from vertices and triangles
+        normals = np.zeros_like(vertices)
+        for i in range(0, len(triangles), 3):
+            v_a = vertices[triangles[i]]
+            v_b = vertices[triangles[i + 1]]
+            v_c = vertices[triangles[i + 2]]
+
+            # Calculate the normal vector for the triangle
+            edge1 = v_b - v_a
+            edge2 = v_c - v_a
+            normal = np.cross(edge1, edge2)
+            normal /= np.linalg.norm(normal)
+            normals[triangles[i]] += normal
+            normals[triangles[i + 1]] += normal
+            normals[triangles[i + 2]] += normal
+
+        normals /= np.linalg.norm(normals, axis=1, keepdims=True)
+
+        return vertices, triangles, colors, normals, uvs
 
 
 if __name__ == "__main__":
